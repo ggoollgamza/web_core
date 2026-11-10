@@ -4,52 +4,7 @@
 
 ---
 
-## 1. 시스템 아키텍처 (System Architecture)
-
-```mermaid
-flowchart TB
-    subgraph Client ["Frontend (React)"]
-        UI["대시보드 차트 & 로그 테이블"]
-        ExportBtn["대용량 엑셀/CSV 다운로드"]
-    end
-
-    subgraph Backend ["Main API Server (Spring Boot 3 / Java 17)"]
-        Controller["REST API Layer (ApiResponse)"]
-        FutureUtil["FutureUtil (8s Timeout & Fallback 격리)"]
-        NIO["ElasticsearchAsyncClient (Apache HttpAsyncClient NIO)"]
-        Bulkhead["esQueryExecutor (CPU-Bound 파싱 격리 스레드 풀)"]
-        ExcelUtil["ExcelUtil (StylePalette 격리 & Pre-compiled Regex)"]
-    end
-
-    subgraph Offload ["Offloading Worker (Rust / Axum / Tokio)"]
-        RustAPI["Exporter API"]
-        BlockingPool["spawn_blocking (rust_xlsxwriter 고속 압축)"]
-        CsvStream["async-stream (Zero-Memory Chunked CSV)"]
-    end
-
-    subgraph Infra ["Elasticsearch Cluster (Hot-Cold Tier & ILM)"]
-        HotNode["es-hot-1 (SSD Tier / Heap 30GB)\ndata_hot, data_content, master, ingest"]
-        ColdNode["es-cold-1 (HDD Tier / Heap 16GB)\ndata_cold (Read-Only)"]
-        HotNode -- "ILM: 5일 경과 후 자동 이관\n(30일 경과 후 자동 삭제)" --> ColdNode
-    end
-
-    UI -->|병렬 비동기 조회| Controller
-    Controller --> FutureUtil
-    FutureUtil -->|Non-blocking I/O| NIO
-    NIO -->| 응답 페이로드 위임 | Bulkhead
-    NIO -->|9200 Port 단일 질의| HotNode
-    HotNode -.->|Scatter & Gather| ColdNode
-
-    ExportBtn -->|1만 건 이하 서식 리포트| ExcelUtil
-    ExportBtn -->|10만 건 이상 대량 추출 오프로딩| RustAPI
-    RustAPI -->|search_after 배치 페칭| HotNode
-    RustAPI --> BlockingPool
-    RustAPI --> CsvStream
-```
-
----
-
-## 2. 핵심 엔지니어링 과제 및 해결 과정 (Key Engineering Challenges)
+## 1. 핵심 엔지니어링 과제 및 해결 과정 (Key Engineering Challenges)
 
 ### ① 인프라: 하이브리드 스토리지(SSD/HDD) 기반 ES Hot-Cold 아키텍처 및 ILM 구축
 * **문제 상황:** 단일 SSD 스토리지에 모든 패킷 로그를 적재함에 따라 디스크 용량 포화 및 스토리지 증설 비용 급증. 최근 5일 이내 데이터에 조회가 집중되고 이후 데이터는 간헐적 이력 확인용으로만 사용되는 비대칭적 접근 패턴 확인.
@@ -92,19 +47,6 @@ flowchart TB
 | **Exporter (PoC)** | Rust / `axum` / `tokio` | 1.75+ / 0.7 | 비가비지 컬렉션(Non-GC) 기반 고성능 비동기 런타임 및 웹 서버 (Tokio) |
 | | `rust_xlsxwriter` | 0.79 | 순수 Rust 기반 고속 XLSX 바이너리 생성 (Crates.io / John McNamara) |
 | | `async-stream` | 0.3 | HTTP Chunked CSV 실시간 스트리밍 응답 생성 (Tokio) |
-| **Infra / Data** | Elasticsearch / Logstash | 8.15.0 | Hot-Cold 티어링, ILM 수명주기 관리 및 패킷 로그 수집 파이프라인 (Elastic) |
+| **Infra / Data** | Elasticsearch / Logstash | 7.16.0 | Hot-Cold 티어링, ILM 수명주기 관리 및 패킷 로그 수집 파이프라인 (Elastic) |
 
 ---
-
-## 4. 로컬 실행 및 테스트 방법 (Quick Start)
-
-```bash
-# 1. Elasticsearch Hot-Cold 클러스터 기동 및 ILM 정책 초기화
-cd infra
-docker compose up -d
-chmod +x init-ilm-policy.sh && ./init-ilm-policy.sh
-
-# 2. Rust 대용량 로그 추출 서버 실행
-cd ../exporter-rust
-ES_URL="[http://127.0.0.1:9200](http://127.0.0.1:9200)" ES_USER="elastic" ES_PASS="NetPulseAdmin1!" cargo run --release
-```
