@@ -1,0 +1,37 @@
+[package]
+name = "excel-export-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# 초고속 비동기 웹 프레임워크 및 런타임
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+
+# 고성능 JSON 파싱 및 데이터 직렬화 (자바의 Jackson/Gson 역할)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Elasticsearch official client (7.x compatible)
+elasticsearch = "7.17.7-alpha.1"
+
+# 초고속 네이티브 엑셀 생성 라이브러리
+rust_xlsxwriter = "0.79"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CORS 설정을 위한 타워 미들웨어 (CORS, tracing, compression 등)
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip"] }
+
+# Optional: 설정 파일 관리
+dotenvy = "0.15"
+
+async-stream = "0.3"
+futures-util = "0.3"
